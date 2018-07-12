@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -89,7 +90,7 @@ func (khs *KnownHosts) Parse() error {
 		return hosts
 	}
 
-	newItems := []*KnownHost{}
+	khs.Items = []*KnownHost{}
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		pieces := strings.SplitN(s.Text(), " ", 3)
@@ -99,15 +100,17 @@ func (khs *KnownHosts) Parse() error {
 		}
 
 		// Parse hosts and IPs.
-		kh := &KnownHost{
-			Addrs:     parseHosts(pieces[0]),
-			KeyType:   pieces[1],
-			PublicKey: pieces[2],
+		if keySearch := khs.FindByKey(pieces[1], pieces[2]); keySearch != nil {
+			keySearch.Addrs = append(keySearch.Addrs, parseHosts(pieces[0])...)
+		} else {
+			kh := &KnownHost{
+				Addrs:     parseHosts(pieces[0]),
+				KeyType:   pieces[1],
+				PublicKey: pieces[2],
+			}
+			khs.Items = append(khs.Items, kh)
 		}
-		newItems = append(newItems, kh)
 	}
-
-	khs.Items = newItems
 
 	return nil
 }
@@ -156,7 +159,8 @@ func (khs *KnownHosts) Add(addrs ...string) (bool, error) {
 						continue
 					} else if addrSearch != nil {
 						if addrSearch.PublicKey != publicKey {
-							return fmt.Errorf("%s for addr=%v", ErrKeyChanged, addr)
+							ips, _ := net.LookupIP(addr)
+							return fmt.Errorf("%s for addr=%v with ip=%s", ErrKeyChanged, addr, ips)
 						}
 					} else if keySearch != nil {
 						keySearch.Addrs = append(keySearch.Addrs, addr)

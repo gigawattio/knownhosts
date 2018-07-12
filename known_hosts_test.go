@@ -23,7 +23,9 @@ func WriteSampleFile() (string, error) {
 		return "", err
 	}
 	defer func() {
-		f.Close()
+		if err := f.Close(); err != nil {
+			panic(err)
+		}
 		os.Chmod(f.Name(), os.FileMode(int(0600)))
 	}()
 	if _, err := f.WriteString(sampleData); err != nil {
@@ -146,6 +148,41 @@ func TestAddressMerge(t *testing.T) {
 
 	if delta := l1 - l0; delta != 1 {
 		t.Errorf("Expected delta=1 but actual=%v", delta)
+	}
+}
+
+func TestParseDuplicateKeys(t *testing.T) {
+	f, err := ioutil.TempFile("", "known_hosts")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const duplicateKeysData = `example.com ssh-rsa publickey1
+192.168.1.103 ssh-rsa publickey1
+127.0.0.1 ssh-rsa otherkey2
+gigawatt.io ssh-rsa otherkey3`
+
+	if _, err := f.WriteString(duplicateKeysData); err != nil {
+		if err := f.Close(); err != nil {
+			t.Error(err)
+		}
+		t.Fatal(err)
+	}
+
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	khs, err := New(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if expected, actual := 3, khs.Len(); actual != expected {
+		t.Fatalf("Expected number of known_hosts items=%v but actual=%v", expected, actual)
+	}
+	if expected, actual := 2, len(khs.FindByKey("ssh-rsa", "publickey1").Addrs); actual != expected {
+		t.Fatalf("Expected number of addresses=%v but actual=%v", expected, actual)
 	}
 }
 
